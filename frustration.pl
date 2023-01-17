@@ -114,7 +114,7 @@ sub poly_prod {
     my ($ref_poly_a, $ref_poly_b) = @_;
     my @poly_a  = @$ref_poly_a;
     my @poly_b  = @$ref_poly_b;
-    
+
     my @product = (0) x ($#poly_a + $#poly_b + 1);
     for (my $i = 0; $i <= $#poly_a; $i++) {
         for (my $j = 0; $j <= $#poly_b; $j++) {
@@ -172,7 +172,7 @@ sub main {
     vprint("Allowed = $allowed\n");
     my $fact = bfact($cards + 0);  # "+ 0" works around a Perl bug.
     vprint("$cards! = $fact\n");
-    
+
     # BUG: $percentage yields NaN for sizes 18x18 and above.
     my $percentage = Math::BigFloat->new(100.0) * $allowed / $fact;
     print "Probability of winning = $percentage%\n";
