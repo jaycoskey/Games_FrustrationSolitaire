@@ -1,6 +1,8 @@
 #!/usr/bin/perl
 # by Jay Coskey
 
+# BIT ROT WARNING: This antique script no longer produces correct results, depite not having been altered in ages.
+
 # This script gets the probability of winning frustration solitaire, using rook polynomials.
 # For info on frustration solitaire (and other rank-derangement problems),
 # see http://math.dartmouth.edu/~doyle/docs/rank/rank.pdf
