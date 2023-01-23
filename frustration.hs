@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Main where
 
 -- Computes the probability of winning frustration solitaire.
@@ -30,8 +32,19 @@ module Main where
 -- TODO: Polynomial
 --     Use a standard polynomial class.
 
+-- For frustration solitaire computations
 import Data.Function (on)
 import Data.List (dropWhileEnd)
+
+-- For parsing arguments
+import Control.Monad          (when)
+import System.Console.GetOpt  (ArgDescr(NoArg), ArgDescr(OptArg), ArgDescr(ReqArg))
+import System.Console.GetOpt  (ArgOrder(Permute))
+import System.Console.GetOpt  (OptDescr(Option))
+import System.Console.GetOpt  (getOpt, usageInfo)
+import System.Environment     (getArgs, getProgName)
+import System.Exit            (ExitCode(ExitFailure), ExitCode(ExitSuccess), exitWith)
+import System.IO              (hPutStrLn, putStrLn, stderr)
 
 
 type Dimension = Integer
@@ -152,10 +165,68 @@ runTests = do
   putStrLn $ "  Frustration test (1, 3) passed?    : " ++ show test_1_3
   putStrLn $ "  Frustration test (2, 2) passed?    : " ++ show test_2_2
   putStrLn $ "  Rook polynomial limit test passed? : " ++ show testLimit
+  putStrLn ""
 
+-- ========================================
+-- Parsing command-line arguments
+
+data Options = Options
+    { optSuits :: Int
+    , optCardsPerSuit :: Int
+    , optDoShowHelp :: Bool
+    } deriving Show
+
+defaultOptions :: Options
+defaultOptions = Options
+    { optSuits = 4
+    , optCardsPerSuit = 13
+    , optDoShowHelp = False
+    }
+
+type OptsXform = Options -> Options
+type OptsXforms = [OptsXform]
+
+-- Each option uses a lambda to transform the set of options, using Haskell record syntax.
+-- TODO: Change -s and -c to OptArgs. (Temporarily using ReqArgs for implementation simplicity.)
+options :: [ OptDescr (OptsXform) ]
+options =
+    [ Option "s" []
+          (ReqArg (\arg opts -> opts { optSuits = read arg })
+          "SUITS")
+          "Specifies the number of suits in the deck."
+    , Option "c" []
+          (ReqArg (\arg opts -> opts { optCardsPerSuit = read "13" })
+          "CARDS_PER_SUIT")
+          "Specifies the number of cards per suit."
+    , Option "h" ["help"]
+          (NoArg (\opts -> opts { optDoShowHelp = True }))
+          "Print this help message."
+    ]
+
+parseArgs:: IO Options
+parseArgs = do
+    argv <- getArgs
+    -- optXforms will act as a series of options transformations.
+    let (optsXforms::OptsXforms, nonOpts::[String], errors::[String]) = getOpt Permute options argv
+    opts <- foldl (>>=) (return defaultOptions) optsXforms
+    return opts
+
+-- ========================================
 
 main :: IO()
 main = do
-  runTests
-  putStrLn ""
-  printFrustrationWinInfo 4 13
+    -- Run tests
+    runTests
+
+    -- Parse command-line args
+    opts <- parseArgs
+    let Options { optSuits = suits
+                , optCardsPerSuit = cardsPerSuit
+                , optDoShowHelp = doShowHelp } = opts
+    progName <- getProgName
+    let usageSummary = "Usage: " ++ progName ++ " [-s SUITS] [-c CARDS_PER_SUIT] [-h] [--help]"
+    let usageMsg = usageInfo usageSummary options
+    when doShowHelp (hPutStrLn stderr usageMsg >> exitWith (ExitFailure (-1)))
+
+    -- Report on solitaire win probability
+    printFrustrationWinInfo suits cardsPerSuit
