@@ -1,8 +1,6 @@
 #!/usr/bin/perl
 # by Jay Coskey
 
-# BIT ROT WARNING: This antique script no longer produces correct results, depite not having been altered in ages.
-
 # This script gets the probability of winning frustration solitaire, using rook polynomials.
 # For info on frustration solitaire (and other rank-derangement problems),
 # see http://math.dartmouth.edu/~doyle/docs/rank/rank.pdf
@@ -40,13 +38,16 @@
 #
 # p = 0.0162327274671946, or about 1.62%.
 
+# Note: In this implementation, the kth element of a polynomial is the coefficient of x^k.
+
 use strict;
 
+# use Carp::Assert;
 use Getopt::Std;
 use Math::BigFloat;
 use Math::BigInt;
 
-my $verbose;
+# my $verbose = 1;
 
 sub bfact {
     my $num = shift;
@@ -54,7 +55,7 @@ sub bfact {
 }
 
 # Compute N(S), as used in the PDF by Doyle, Grinstead, and Snell.
-sub getN {
+sub getArrangementCount {
     my ($r, $m, $n) = @_;
 
     if ($r == 0) {
@@ -63,34 +64,31 @@ sub getN {
     if ($r == 1) {
         return $m * $n;
     }
-    my $result = 0;
+    my $result = Math::BigInt->new(0);
     for (my $j = 1; $j <= $m - $r + 1; $j++) {
-        $result += $n * getN($r - 1, $m - $j, $n - 1);
+        $result->badd($n * getArrangementCount($r - 1, $m - $j, $n - 1));
     }
     return $result;
 }
 
-# The kth element of the returned array is the coefficient of x^k.
 sub getSquareRookPolynomial {
     my $dim  = shift;
     my @poly = ();
 
     for (my $j = 0; $j <= $dim; $j++) {
-        print(".");
-        push(@poly, getN($j, $dim, $dim));
+        push(@poly, getArrangementCount($j, $dim, $dim));
     }
     return @poly;
 }
 
-# The kth element of a polynomial is the coefficient of x^k.
 sub poly_pow {
-    my ($power, $ref_poly_base) = @_;
+    my ($ref_poly_base, $power) = @_;
     my @poly_base = @$ref_poly_base;
 
     if ($power == 0) { return (1); }
     if ($power == 1) { return (@poly_base); }
 
-    my @poly_half = poly_pow(int($power / 2), \@poly_base);
+    my @poly_half = poly_pow(\@poly_base, int($power / 2));
     my @prod = poly_prod(\@poly_half, \@poly_half);
     my $parity = $power % 2;
     if ($parity == 1) {
@@ -99,17 +97,6 @@ sub poly_pow {
     return @prod
 }
 
-# The kth element of a polynomial is the coefficient of x^k.
-sub poly_print {
-    my @poly = @_;
-
-    for (my $i = $#poly; $i >= 0; $i--) {
-        print "$poly[$i]";
-        if ($i > 0) { print " x^$i + "; }
-    }
-}
-
-# The kth element of a polynomial is the coefficient of x^k.
 sub poly_prod {
     my ($ref_poly_a, $ref_poly_b) = @_;
     my @poly_a  = @$ref_poly_a;
@@ -124,64 +111,170 @@ sub poly_prod {
     return @product;
 }
 
-sub vprint {
-    my @args = @_;
-    if ($verbose) { print @args; }
+sub poly_str {
+    my @poly = @_;
+    my @result = ();
+
+    for (my $power = $#poly; $power >= 0; $power--) {
+        my $term = "";
+        if ($poly[$power] != 0) {
+            my $is_units = $power == 0;
+            if ($poly[$power] != 1 || $is_units) { $term .= "$poly[$power]"; }
+            if ($power > 0) {
+                $term .= "x^$power";
+            }
+        }
+        push @result, $term;
+    }
+    return join " + ", @result;
 }
 
-########## ########## ########## ##########
+# ========================================
+
+sub getFrustrationWinRawOdds {
+    my $suits = shift;
+    my $cps = shift;
+    my $cards = $suits * $cps;
+
+    my @suitPoly = getSquareRookPolynomial($suits);
+    my @fullPoly = poly_pow(\@suitPoly, $cps);
+
+    my $winning = Math::BigInt->new(0);
+    for (my $k = 0; $k <= $cards; $k++) {
+        $winning->badd(((-1) ** $k) * $fullPoly[$k] * bfact($cards - $k));
+    }
+
+    my $fact = bfact($cards + 0);  # "+ 0" works around a Perl bug.
+
+    return ($winning, $fact);
+}
+
+# ========================================
+
+sub arr_eq {
+    my $ref1 = shift;
+    my $ref2 = shift;
+
+    my @arr1 = @{$ref1};
+    my @arr2 = @{$ref2};
+
+    if (scalar(@arr1) != scalar(@arr2)) {
+        return 0;
+    }
+    foreach my $k (0 .. $#arr1) {
+        if ($arr1[$k] != $arr2[$k]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+sub pf_str {
+    my $success = shift;
+    return $success ? "passed" : "failed";
+}
+
+sub test_fact {
+    my $tf0 = bfact(0) == 1;
+    my $tf1 = bfact(1) == 1;
+    my $tf2 = bfact(2) == 2;
+    my $tf3 = bfact(3) == 6;
+    my $tf4 = bfact(4) == 24;
+    my $test_fact = $tf0 && $tf1 && $tf2 && $tf3 && $tf4;
+    print("test_fact ", pf_str($test_fact), "\n");
+}
+
+sub test_poly {
+    my @poly1 = getSquareRookPolynomial(1);
+    my @poly2 = getSquareRookPolynomial(2);
+    my @poly3 = getSquareRookPolynomial(3);
+    my @poly4 = getSquareRookPolynomial(4);
+
+    my @exp_poly1 = (1, 1);
+    my @exp_poly2 = (1, 4, 2);
+    my @exp_poly3 = (1, 9, 18, 6);
+    my @exp_poly4 = (1, 16, 72, 96, 24);
+
+    # print("poly1=", poly_str(@poly1), " - ", join(",", @poly1), "\n");
+    # print("poly2=", poly_str(@poly2), " - ", join(",", @poly2), "\n");
+    # print("poly3=", poly_str(@poly3), " - ", join(",", @poly3), "\n");
+    # print("poly4=", poly_str(@poly4), " - ", join(",", @poly4), "\n");
+
+    my $test_poly1 = arr_eq(\@poly1, \@exp_poly1);
+    my $test_poly2 = arr_eq(\@poly2, \@exp_poly2);
+    my $test_poly3 = arr_eq(\@poly3, \@exp_poly3);
+    my $test_poly4 = arr_eq(\@poly4, \@exp_poly4);
+
+    print("test_poly1 ", pf_str($test_poly1), "\n");
+    print("test_poly2 ", pf_str($test_poly2), "\n");
+    print("test_poly3 ", pf_str($test_poly3), "\n");
+    print("test_poly4 ", pf_str($test_poly4), "\n");
+}
+
+# Note: If Math::BigInt is not used throughout, inaccuracy creeps in @ 4 suits, 9 cards per suit.
+sub test_frust {
+    my @tf_1_2 = getFrustrationWinRawOdds(1, 2);
+    my @tf_1_3 = getFrustrationWinRawOdds(1, 3);
+    my @tf_2_2 = getFrustrationWinRawOdds(2, 2);
+    my @tf_3_3 = getFrustrationWinRawOdds(3, 3);
+    my @tf_4_4 = getFrustrationWinRawOdds(4, 4);
+
+    my @exp_1_2 = (1, 2);
+    my @exp_1_3 = (2, 6);
+    my @exp_2_2 = (4, 24);
+    my @exp_3_3 = (12096, 362880);
+    my @exp_4_4  = (Math::BigInt->new("248341303296"),
+                    Math::BigInt->new("20922789888000"));
+
+    my $test_frust_1_2 = arr_eq(\@tf_1_2, \@exp_1_2);
+    my $test_frust_1_3 = arr_eq(\@tf_1_3, \@exp_1_3);
+    my $test_frust_2_2 = arr_eq(\@tf_2_2, \@exp_2_2);
+    my $test_frust_3_3 = arr_eq(\@tf_3_3, \@exp_3_3);
+    my $test_frust_4_4 = arr_eq(\@tf_4_4, \@exp_4_4);
+
+    print("test_frust_1_2 ", pf_str($test_frust_1_2), "\n");
+    print("test_frust_1_3 ", pf_str($test_frust_1_3), "\n");
+    print("test_frust_2_2 ", pf_str($test_frust_2_2), "\n");
+    print("test_frust_3_3 ", pf_str($test_frust_3_3), "\n");
+    print("test_frust_4_4 ", pf_str($test_frust_4_4), "\n");
+}
+
+sub test {
+    $| = 1;
+    test_fact();
+    print("\n");
+    test_poly();
+    print("\n");
+    test_frust();
+}
+
+# ========================================
 # Compute the odds of winning "frustration solitaire",
 # given a deck with the specified number of suits and cards per suit.
 sub main {
-    getopts('v');
-    our $opt_v;
-    if ($opt_v) { $verbose = 1; } else { $verbose = 0; }
+    # getopts('v');
+    # our $opt_v;
+    # if ($opt_v) { $verbose = 1; } else { $verbose = 0; }
     ($#ARGV == 1)
-        || die "\nusage: frustration [-v] num_suits num_cards_per_suit\n\n";
+        || die "\nusage: frustration num_suits num_cards_per_suit\n\n";
     my $suits = $ARGV[0];
     my $cps = $ARGV[1];
+
     $| = 1;
-
-    vprint("Settings: $suits suits of $cps cards per suit.\n");
-    print "Computing the rook polynomial for a $suits x $suits chessboard";
-    my @rook1 = getSquareRookPolynomial($suits);
-    print("\n");
-    if ($verbose) {
-        print "\t";
-        poly_print(@rook1);
-        print "\n\n";
-    }
-
-    print "Now computing that polynomail to the power $cps.\n";
-    my $cards = $suits * $cps;
-    my @rook2 = poly_pow($cps, \@rook1);
-    if ($verbose) {
-        print "( ";
-        poly_print(@rook1);
-        print " )^$cps = ";
-        poly_print(@rook2);
-        print "\n\n";
-    }
-
-    print "Computing the number of winning combinations for frustration solitaire.\n";
-    my $allowed = 0;
-    for (my $j = 0; $j <= $cards; $j++) {
-        $allowed += ((-1) ** $j) * $rook2[$j] * bfact($cards - $j);
-    }
-    vprint("Done.\n");
-    vprint("Allowed = $allowed\n");
-    my $fact = bfact($cards + 0);  # "+ 0" works around a Perl bug.
-    vprint("$cards! = $fact\n");
+    my ($winning, $fact) = getFrustrationWinRawOdds($suits, $cps);
 
     # BUG: $percentage yields NaN for sizes 18x18 and above.
-    my $percentage = Math::BigFloat->new(100.0) * $allowed / $fact;
-    print "Probability of winning = $percentage%\n";
-    if ($verbose) {
-        my $limit = exp(-1 * $suits);
-        print("Note: (1) Probability of winning approaches e^(#suits)\n");
-        print("\twhen cards per suit >> #suits.\n");
-        print("Note: (2) e^(-$suits) ~= $limit\n");
-    }
+    my $percentage = Math::BigFloat->new(100.0) * $winning / $fact;
+    print("For a deck with $suits suits and $cps cards per suit:\n");
+    print("\tWinning combinations: $winning\n");
+    print("\tTotal combinations:   $fact\n");
+    print("\tPercentage probability of winning = $percentage\n");
+
+    print("When cards per suit >> #suits, prob of winning --> e^(- #suits),\n");
+    my $limit_percent = 100 * exp(-1 * $suits);
+    print("\tand e^(-$suits) ~= $limit_percent %\n");
 }
 
+test();
+print("\n");
 main();
