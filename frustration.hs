@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
@@ -210,10 +211,14 @@ parseArgs progName args = opts
 
 main :: IO()
 main = do
-    runTests
+    -- Catch command-line argument errors before running tests
     args <- getArgs
     progName <- getProgName
-    let opts = parseArgs progName args
+    let !opts = parseArgs progName args
+
+    -- Run tests
+    runTests
+
     let Options { optSuits = suits
                 , optCardsPerSuit = cardsPerSuit
                 , optDoShowHelp = doShowHelp } = opts
