@@ -1,3 +1,6 @@
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Main where
 
 -- Computes the probability of winning frustration solitaire.
@@ -30,8 +33,19 @@ module Main where
 -- TODO: Polynomial
 --     Use a standard polynomial class.
 
+-- For frustration solitaire computations
 import Data.Function (on)
 import Data.List (dropWhileEnd)
+
+-- For parsing arguments
+import Control.Monad          (when)
+import System.Console.GetOpt  (ArgDescr(NoArg), ArgDescr(OptArg), ArgDescr(ReqArg))
+import System.Console.GetOpt  (ArgOrder(Permute))
+import System.Console.GetOpt  (OptDescr(Option))
+import System.Console.GetOpt  (getOpt, usageInfo)
+import System.Environment     (getArgs, getProgName)
+import System.Exit            (ExitCode(ExitFailure), ExitCode(ExitSuccess), exitWith)
+import System.IO              (hPutStrLn, putStrLn, stderr)
 
 
 type Dimension = Integer
@@ -103,8 +117,8 @@ getFrustrationWinRawOdds suit_count cards_per_suit = do
   (raw_numer, raw_denom)
 
 
-printFrustrationWinInfo :: Int -> Int -> IO()
-printFrustrationWinInfo suit_count cards_per_suit = do
+printFrustrationSolitaireWinInfo :: Int -> Int -> IO()
+printFrustrationSolitaireWinInfo suit_count cards_per_suit = do
   putStrLn $ "Frustration Solitaire win probability (see \"Frustration Solitaire\", by Doyle, Grinstead, and Snell)"
   -- Get probability of winning: Ways to win / Total number of permutations
   let (numer, denom) = getFrustrationWinRawOdds (toInteger suit_count) (toInteger cards_per_suit)
@@ -140,9 +154,9 @@ runTests = do
   let test_2_2 = (getFrustrationWinRawOdds 2 2) == (4, 24)
 
   -- Verify that the prob of winning approaches exp(-4) as cards_per_suit --> Infinity
-  let e_4 = exp(-4)
+  let limit = exp(-4)
   let (numer_limit, denom_limit) = getFrustrationWinRawOdds 4 40
-  let diff_ratio_limit = abs((numer_limit `fdiv` denom_limit) - e_4) / e_4
+  let diff_ratio_limit = abs((numer_limit `fdiv` denom_limit) - limit) / limit
   let testLimit = diff_ratio_limit < 0.04
 
   putStrLn $ "Tests:"
@@ -152,10 +166,60 @@ runTests = do
   putStrLn $ "  Frustration test (1, 3) passed?    : " ++ show test_1_3
   putStrLn $ "  Frustration test (2, 2) passed?    : " ++ show test_2_2
   putStrLn $ "  Rook polynomial limit test passed? : " ++ show testLimit
+  putStrLn ""
 
+-- ========================================
+-- Parsing command-line arguments
+
+data Options = Options
+    { optSuits :: Int
+    , optCardsPerSuit :: Int
+    , optDoShowHelp :: Bool
+    } deriving Show
+
+defaultOptions :: Options
+defaultOptions = Options
+    { optSuits = 4
+    , optCardsPerSuit = 13
+    , optDoShowHelp = False
+    }
+
+options :: [ OptDescr (Options -> Options) ]
+options =
+    [ Option "s" []
+          (ReqArg (\arg opts -> opts { optSuits = read arg })
+          "SUITS")
+          "Specify the number of suits in the deck."
+    , Option "c" []
+          (ReqArg (\arg opts -> opts { optCardsPerSuit = read arg })
+          "CARDS_PER_SUIT")
+          "Specify the number of cards per suit."
+    , Option "h" ["help"]
+          (NoArg (\opts -> opts { optDoShowHelp = True }))
+          "Print this help message."
+    ]
+
+parseArgs:: String -> [String] -> Options
+parseArgs progName args = opts
+  where
+    (opts, errors) = case getOpt Permute options args of
+      (opt, _, []) -> (foldl (flip id) defaultOptions opt, [])
+      (_, _, errs) -> error (concat errs ++ usageInfo usageSummary options)
+    usageSummary = "Usage: " ++ progName ++ " <OPTIONS>"
+
+-- ========================================
 
 main :: IO()
 main = do
-  runTests
-  putStrLn ""
-  printFrustrationWinInfo 4 13
+    -- Catch command-line argument errors before running tests
+    args <- getArgs
+    progName <- getProgName
+    let !opts = parseArgs progName args
+
+    -- Run tests
+    runTests
+
+    let Options { optSuits = suits
+                , optCardsPerSuit = cardsPerSuit
+                , optDoShowHelp = doShowHelp } = opts
+    printFrustrationSolitaireWinInfo suits cardsPerSuit
